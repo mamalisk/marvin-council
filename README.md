@@ -1,10 +1,10 @@
 # Marvin Council
 
-The approved Marvin mockups ported to a Next.js App Router application with React and TypeScript. This is a local, interactive product prototype plus a separate real GitHub Copilot SDK connectivity test.
+The approved Marvin mockups ported to a Next.js App Router application with React and TypeScript. The council workspace is an interactive product prototype. GitHub App OAuth, server-side sessions, and a real Copilot SDK connectivity test are implemented separately from the simulated councils.
 
 ## Run locally
 
-Use Node.js 22 LTS or newer and npm. From this directory:
+Use Node.js 22.9+ and npm. From this directory:
 
 ```powershell
 npm ci
@@ -23,11 +23,11 @@ Open http://127.0.0.1:3000 and choose **Explore the demo**. The app binds to loo
 - Revision-specific human approvals, approval invalidation after an answer changes, and Markdown specification export.
 - Browser persistence for councils, drafts, documents, definitions, and theme preferences.
 
-**Council deliberation, ingestion, usage meters, invitations, identities, and transcription are simulated.** No microphone recording, multi-user synchronization, live Delphi search, model execution, real budget enforcement, or billing happens in the council UI. The local upload prototype reads Markdown/text; binary files retain metadata only. Data stays in browser localStorage and is not shared between devices. Clear the `marvin-council.workspace.v1` key to reset the demo. Do not treat this unauthenticated prototype as a deployed internal service.
+**Council deliberation, ingestion, usage meters, invitations, council participants, and transcription are simulated.** No microphone recording, multi-user synchronization, live Delphi search, model execution, real budget enforcement, or billing happens in the council UI. The local upload prototype reads Markdown/text; binary files retain metadata only. Data stays in browser localStorage and is not shared between devices. Clear the `marvin-council.workspace.v1` key to reset the demo. OAuth mode namespaces this prototype storage by GitHub user ID and shows the real signed-in identity in the sidebar; simulated council participants remain explicitly separate.
 
 ## Test real GitHub Copilot access
 
-The connection screen at `/connection` uses the official `@github/copilot-sdk`. This is a local SDK experiment, separate from future Marvin web authentication.
+The connection screen at `/connection` uses the official `@github/copilot-sdk`. The commands below test the local CLI profile in demo mode. For web OAuth and corporate deployment, follow [Production OAuth setup](docs/production-oauth.md).
 
 1. In your own terminal, run:
 
@@ -57,14 +57,16 @@ Verified during the port: the SDK runtime starts and accurately reports the loca
 
 See GitHub's [CLI authentication guide](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli) and [SDK GitHub OAuth guide](https://docs.github.com/en/copilot/how-tos/copilot-sdk/setup/github-oauth).
 
-## Future web OAuth setup
+## Production web OAuth
 
-The CLI test does not require you to register an application. For Marvin's eventual multi-user web sign-in:
+The web flow is implemented using a GitHub App, PostgreSQL-backed sessions, encrypted server-side tokens, S256 PKCE/state validation, active organization membership checks, token refresh, sign-out, disconnect/revocation, and signed revocation webhooks. Each SDK check receives the authenticated user's token with local credential fallback disabled.
 
-1. Register a development **GitHub App** under your GitHub developer settings. Configure the homepage as `http://127.0.0.1:3000`. Reserve `http://127.0.0.1:3000/api/auth/github/callback` as the local callback; **this route is not implemented yet**. Follow GitHub's SDK OAuth guide for the current required user permissions and organization configuration.
-2. Keep the app's client ID and generated client secret in a local ignored `.env.local` (proposed names: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_CALLBACK_URL`). These variables are not consumed by this prototype. Never use a `NEXT_PUBLIC_` prefix for secrets.
-3. Implement server-side authorization-code exchange, state and PKCE checks, secure application sessions, token storage/refresh/revocation, and organization membership checks. Pass the designated session owner's authorized user token to the SDK on the server. A GitHub login alone does not establish Copilot entitlement.
-4. Keep human identity separate from the council execution owner. Do not store shared owner credentials in the browser or reuse the local diagnostic as a hosted authentication flow.
+1. Register the GitHub App with callback `/api/auth/github/callback`, Members read permission, expiring user tokens, and webhook `/api/auth/github/webhook`.
+2. Configure `.env.local` from `.env.example`, including the exact `APP_ORIGIN`, allowed organizations, database, encryption key, and GitHub secrets.
+3. Run `npm run auth:migrate`, restart the app, and use **Sign in with GitHub**.
+4. Validate the real signed-in account, available models, chat, and lifecycle operations using [the corporate acceptance steps](docs/production-oauth.md).
+
+Production requires HTTPS and authentication; missing configuration fails closed. `/api/copilot` uses web sessions, while `/api/copilot/check` remains a development-only CLI diagnostic. The current provider hosts are GitHub.com/api.github.com. Corporate authentication and real chat still require your registered app and account to verify. Future council owner assignment and background orchestration are not implemented by this change.
 
 ## Validation
 
@@ -75,15 +77,17 @@ npm run test:e2e
 npm run build
 ```
 
-Playwright uses installed Google Chrome and starts or reuses the development server. Domain tests cover context routing, immutable session snapshots, launch boundaries, approval revision semantics, Markdown round-tripping, and diagnostic origin restrictions. Browser tests cover the marketplace, complete council creation/review/export flow, mobile layout, and the unauthenticated Copilot UI. Browser tests stub Copilot responses and do not spend model allowance. Screenshots and traces are written to ignored `test-results/`.
+Playwright uses installed Google Chrome and starts an isolated development server on port 3002 using `.next-e2e`. Domain tests cover context routing, immutable snapshots, launch boundaries, approvals, and Markdown formats. Auth tests run the actual SQL against embedded PostgreSQL and exercise the route handlers, state/PKCE, cookies, session isolation, refresh, revocation, and request restrictions. Browser tests cover the council flows and both local and OAuth Copilot UI states. Provider responses are mocked in automated tests; no model allowance is spent. Screenshots and traces are written to ignored `test-results/`.
 
 ## Structure and next work
 
-- `src/app`: Next.js routes and the development-only SDK diagnostic endpoint.
+- `src/app`: Next.js routes, OAuth endpoints, and local/authenticated SDK checks.
 - `src/components`: screens and browser workspace provider.
 - `src/lib/workspace.ts`: typed mock domain, document routing, and Markdown formats.
 - `src/lib/copilot-probe.ts`: server/terminal SDK diagnostic.
+- `src/lib/auth`: OAuth, token encryption, session storage, and access checks.
+- `db/001-auth.sql`: PostgreSQL auth schema.
 - `scripts`: official CLI sign-in and SDK status/chat commands.
 - `docs/product-plan.md`: agreed product direction.
 
-Next: validate your Copilot sign-in/chat, then implement the production identity and orchestration boundary. Real councils need persisted durable state, parallel isolated specialists, Delphi citation retrieval, moderator coordination, shared token/time accounting with explicit extensions, and authenticated human collaboration. Delphi API details and the existing Marvin YAML plan schema are still required. Figma previews and real speech transcription are pending. Cost attribution/splitting remains a product decision.
+Next: validate web OAuth/Copilot against the corporate account and deployment, then implement council orchestration. Real councils need persisted durable state, parallel isolated specialists, Delphi citation retrieval, moderator coordination, shared token/time accounting with explicit extensions, and authenticated human collaboration. Delphi API details and the existing Marvin YAML plan schema are still required. Figma previews and real speech transcription are pending. Cost attribution/splitting remains a product decision.

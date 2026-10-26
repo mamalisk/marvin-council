@@ -1,23 +1,30 @@
 import {mkdir} from "node:fs/promises";
 import path from "node:path";
 import {CopilotClient,type CopilotSession} from "@github/copilot-sdk";
+import {createOAuthRuntime} from "./copilot-runtime";
 
 export type ProbeResult={runtime:boolean;authenticated:boolean;login?:string;authType?:string;models:{id:string;name:string}[];reply?:string;error?:string};
-let busy=false;
+const active = new Set<string>();
 export function safeDiagnostic(error:unknown):string {
   const text=error instanceof Error?error.message:"Unknown SDK error";
   return text.replace(/\b(?:gh[opusr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)\b/g,"[redacted]").replace(/Bearer\s+\S+/gi,"Bearer [redacted]").slice(0,900);
 }
-export async function probeCopilot(action:"status"|"chat",model?:string):Promise<ProbeResult>{
-  if(busy)throw new Error("A Copilot diagnostic is already running. Wait for it to finish.");
-  busy=true;
+export async function probeCopilot(action:"status"|"chat",model?:string,owner?:{id:string;accessToken:string}):Promise<ProbeResult>{
+  const key = owner?.id || "local-cli";
+  if(active.has(key) || active.size >= 8)throw new Error("A Copilot diagnostic is already running or capacity is full. Retry shortly.");
+  active.add(key);
+  let isolated:Awaited<ReturnType<typeof createOAuthRuntime>>|undefined;
   let client:CopilotClient|undefined,session:CopilotSession|undefined,timer:ReturnType<typeof setTimeout>|undefined;
   const result:ProbeResult={runtime:false,authenticated:false,models:[]};
   try {
-    const dir=path.join(process.cwd(),".copilot-local","work");
-    await mkdir(dir,{recursive:true});
-    // Isolate this app's CLI sign-in and session state from the user's other Copilot sessions.
-    client=new CopilotClient({mode:"empty",baseDirectory:path.join(process.cwd(),".copilot-local"),useLoggedInUser:true,workingDirectory:dir,logLevel:"none"});
+    if(owner){
+      isolated=await createOAuthRuntime(owner.accessToken);
+      client=new CopilotClient(isolated.options);
+    } else {
+      const dir=path.join(process.cwd(),".copilot-local","work");
+      await mkdir(dir,{recursive:true});
+      client=new CopilotClient({mode:"empty",baseDirectory:path.join(process.cwd(),".copilot-local"),useLoggedInUser:true,workingDirectory:dir,logLevel:"none"});
+    }
     const work=async()=>{
       await client!.start();
       result.runtime=true;
@@ -38,11 +45,12 @@ export async function probeCopilot(action:"status"|"chat",model?:string):Promise
       return result;
     };
     return await Promise.race([work(),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("Copilot diagnostic timed out. Check sign-in, network access, and organization policy.")),40000);})]);
-  }catch(error){return {...result,error:safeDiagnostic(error)};}
+  }catch(error){return {...result,error:owner?"Copilot could not complete the check. Verify entitlement, organization policy, model availability, and network access.":safeDiagnostic(error)};}
   finally {
     if(timer)clearTimeout(timer);
     // sendAndWait timeout only stops waiting. Stop the runtime as well, including any in-flight work.
     try{if(client)await client.forceStop();}catch{/* The runtime may already have exited. */}
-    busy=false;
+    try{await isolated?.dispose();}catch{/* Do not expose runtime filesystem paths. */}
+    active.delete(key);
   }
 }

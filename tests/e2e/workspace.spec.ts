@@ -100,3 +100,20 @@ test("Copilot UI requires authentication before sending chat",async({page})=>{
   await expect(page.getByRole("button",{name:"Send test greeting"})).toBeDisabled();
   expect(calls).toEqual(["status"]);
 });
+
+test("web OAuth connection uses the authenticated endpoint and exposes no token fields",async({page})=>{
+  await page.route("**/api/auth/session",route=>route.fulfill({json:{mode:"github",user:{id:"42",login:"enterprise-user",name:"Corporate User"}}}));
+  const bodies:unknown[]=[];
+  await page.route("**/api/copilot",route=>{
+    const body=route.request().postDataJSON();bodies.push(body);
+    return route.fulfill({json:{runtime:true,authenticated:true,login:"enterprise-user",models:[{id:"test-model",name:"Test model"}],...(body.action==="chat"?{reply:"Marvin Council is connected."}:{})}});
+  });
+  await page.goto("/connection");
+  await expect(page.getByText("GitHub OAuth",{exact:true})).toBeVisible();
+  await expect(page.getByRole("button",{name:"Sign out",exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Check Copilot access"}).click();
+  await page.getByRole("button",{name:"Send test greeting"}).click();
+  await expect(page.getByText("Marvin Council is connected.",{exact:true})).toBeVisible();
+  expect(bodies).toEqual([{action:"status"},{action:"chat",model:"test-model"}]);
+  await page.screenshot({path:"test-results/oauth-connection.png",fullPage:true});
+});

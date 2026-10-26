@@ -2,7 +2,7 @@
 
 Updated: 2026-10-26. Status: discovery baseline, not an implementation specification.
 
-This document distinguishes confirmed requirements from proposed design and unresolved dependencies. No runtime or integration has been implemented or tested yet.
+This document distinguishes confirmed requirements from proposed design and unresolved dependencies. Implementation update: the Next.js prototype, local SDK diagnostic, and GitHub App web OAuth flow now exist. See `docs/production-oauth.md` for the implemented authentication boundary, setup, and validation limits. Live council orchestration and Delphi integration remain pending.
 
 ## Purpose and success
 

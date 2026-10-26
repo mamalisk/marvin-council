@@ -5,6 +5,6 @@ export default defineConfig({
   fullyParallel:false,
   workers:1,
   timeout:60000,
-  use:{baseURL:"http://127.0.0.1:3000",channel:"chrome",viewport:{width:1440,height:1000},trace:"retain-on-failure",screenshot:"only-on-failure"},
-  webServer:{command:"npm run dev",url:"http://127.0.0.1:3000",reuseExistingServer:!process.env.CI,timeout:120000},
+  use:{baseURL:"http://127.0.0.1:3002",channel:"chrome",viewport:{width:1440,height:1000},trace:"retain-on-failure",screenshot:"only-on-failure"},
+  webServer:{command:"npm run dev -- --port 3002",url:"http://127.0.0.1:3002",env:{NEXT_DIST_DIR:".next-e2e",AUTH_MODE:"demo"},reuseExistingServer:false,timeout:120000},
 });
