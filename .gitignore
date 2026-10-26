@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+.env*
+!.env.example
+.copilot-local/
+playwright-report/
+test-results/
+*.tsbuildinfo
+*.log

@@ -1,0 +1,24 @@
+"use client";
+
+import Link from "next/link";
+import {usePathname, useRouter} from "next/navigation";
+import {ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Bookmark, Boxes, Check, CheckCheck, ChevronDown, Database, Download, FilePenLine, FileText, GitFork, LayoutDashboard, LogOut, Menu, MessagesSquare, Mic, Moon, Paperclip, Pause, Play, Plus, Radio, Reply, Search, Settings2, ShieldCheck, Sparkles, Sun, Upload, UserPlus, Users, Workflow, X, type LucideIcon} from "lucide-react";
+import {type ReactNode, type ButtonHTMLAttributes} from "react";
+import {useWorkspace} from "./workspace-provider";
+import {freshDraft} from "@/lib/workspace";
+
+const icons:Record<string,LucideIcon>={"arrow-left":ArrowLeft,"arrow-right":ArrowRight,"arrow-up":ArrowUp,"arrow-up-right":ArrowUpRight,bookmark:Bookmark,boxes:Boxes,check:Check,"check-check":CheckCheck,"chevron-down":ChevronDown,database:Database,download:Download,"file-pen-line":FilePenLine,"file-text":FileText,"git-fork":GitFork,github:GitFork,"layout-dashboard":LayoutDashboard,"log-out":LogOut,menu:Menu,"messages-square":MessagesSquare,mic:Mic,moon:Moon,paperclip:Paperclip,pause:Pause,play:Play,plus:Plus,radio:Radio,reply:Reply,search:Search,"settings-2":Settings2,"shield-check":ShieldCheck,sparkles:Sparkles,sun:Sun,upload:Upload,"user-plus":UserPlus,users:Users,workflow:Workflow,x:X};
+export function Icon({name}:{name:string}){const Component=icons[name]||Sparkles;return <Component size={16} aria-hidden="true"/>;}
+export function Button({children,variant="",className="",...props}:ButtonHTMLAttributes<HTMLButtonElement>&{variant?:string}){return <button type="button" className={`mc-btn ${variant} ${className}`} {...props}>{children}</button>;}
+export function Badge({children,tone=""}:{children:ReactNode;tone?:string}){return <span className={`mc-pill ${tone}`}>{children}</span>;}
+export function Avatar({name,moderator=false}:{name:string;moderator?:boolean}){return <span className={`mc-avatar ${moderator?"mod":""}`}>{moderator?<span className="mc-mark"/>:name.slice(0,2).toUpperCase()}</span>;}
+export function Brand(){return <Link className="mc-brand" href="/dashboard" aria-label="Marvin Council home"><span className="mc-mark"/>marvin<span className="mc-muted">/</span></Link>;}
+export function Progress({value,label}:{value:number;label:string}){return <div className="mc-progress-track" role="progressbar" aria-label={label} aria-valuenow={Math.min(100,value)} aria-valuemin={0} aria-valuemax={100}><div className="mc-progress-fill" style={{width:`${Math.min(100,value)}%`}}/></div>;}
+export function downloadText(name:string,text:string){const url=URL.createObjectURL(new Blob([text],{type:"text/markdown;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+
+export function Shell({title,children}:{title:string;children:ReactNode}){
+  const pathname=usePathname(),router=useRouter();
+  const {workspace,setWorkspace,ready}=useWorkspace();
+  const start=()=>{setWorkspace(s=>({...s,draft:freshDraft()}));router.push("/councils/new");};
+  return <div className="mc-window"><div className="mc-shell"><aside className="mc-sidebar"><Brand/><nav className="mc-side-group" aria-label="Workspace navigation"><span className="mc-eyebrow">Workspace</span>{[["/dashboard","layout-dashboard","Overview"],["/councils","messages-square","Councils"],["/marketplace","boxes","Marketplace"]].map(([href,icon,label])=><Link key={href} href={href} className={`mc-nav ${pathname.startsWith(href)?"active":""}`} aria-current={pathname.startsWith(href)?"page":undefined}><Icon name={icon}/>{label}</Link>)}</nav><nav className="mc-side-group mc-side-extra" aria-label="Your space"><span className="mc-eyebrow">Your space</span><Link className="mc-nav" href="/marketplace?filter=custom"><Icon name="bookmark"/>Your definitions</Link><Link className={`mc-nav ${pathname==="/connection"?"active":""}`} href="/connection"><Icon name="github"/>Copilot connection</Link></nav><div className="mc-account"><div className="mc-row"><span className="mc-person">AR</span><span>Alex Rivera<br/><span className="mc-muted">@alex-r · demo identity</span></span></div><div className="mc-between mc-smallgap"><Badge>Mock workspace</Badge><button className="mc-iconbtn" onClick={()=>setWorkspace(s=>({...s,theme:s.theme==="dark"?"light":"dark"}))} aria-label={`Switch to ${workspace.theme==="dark"?"light":"dark"} theme`}><Icon name={workspace.theme==="dark"?"sun":"moon"}/></button></div></div></aside><div className="mc-work"><header className="mc-topbar"><span><span className="mc-muted">Workspace / </span>{title}</span><div className="mc-row"><Badge>Internal workspace</Badge><Button variant="ghost" onClick={start}><Icon name="plus"/>New council</Button></div></header>{ready?children:<main className="mc-main"><p className="mc-muted" role="status">Opening your workspace…</p></main>}</div></div></div>;
+}
