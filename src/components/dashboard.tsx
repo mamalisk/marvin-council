@@ -7,10 +7,12 @@ import {useWorkspace} from "./workspace-provider";
 import {useAuth} from "./auth-provider";
 import {freshDraft, starterAgents, type Council} from "@/lib/workspace";
 
+import {CreateFollowUpButton} from "./council-outcomes";
+
 export function CouncilCard({council}:{council:Council}){
   const approved=council.approvals.length>=council.quorum;
   const review=council.status==="review";
-  return <article className="mc-council-card"><div className="mc-between"><Badge tone={approved?"green":review?"green":"amber"}>{approved?"Approved":review?"Ready for review":council.status==="paused"?"Paused":council.mode==="offline"?"Offline session":"Waiting for your input"}</Badge><span className="mc-muted mc-caption">{council.mode==="live"?"Live":"Asynchronous"}</span></div><h3>{council.name}</h3><p>{review?`Specification v${council.revision} is ready. ${council.approvals.length} of ${council.quorum} human approvals received.`:council.grow[0]}</p><div className="mc-footer"><div className="mc-avatar-stack">{council.agents.map(a=><Avatar key={a.id} name={a.name}/>)}</div><Link className="mc-btn ghost" href={`/councils/${council.id}`}>{review?"Review":"Resume"}<Icon name="arrow-up-right"/></Link></div></article>;
+  return <article className="mc-council-card"><div className="mc-between"><Badge tone={approved?"green":review?"green":"amber"}>{approved?"Approved":review?"Ready for review":council.status==="paused"?"Paused":council.mode==="offline"?"Offline session":"Waiting for your input"}</Badge><span className="mc-muted mc-caption">{council.mode==="live"?"Live":"Asynchronous"}</span></div><h3>{council.name}</h3><p>{review?`Specification v${council.revision} is ready. ${council.approvals.length} of ${council.quorum} human approvals received.`:council.grow[0]}</p>{council.documents.some(d=>d.outcome)&&<Badge>Follow-up council</Badge>}<div className="mc-footer"><div className="mc-avatar-stack">{council.agents.map(a=><Avatar key={a.id} name={a.name}/>)}</div><Link className="mc-btn ghost" href={`/councils/${council.id}`}>{review?"Review":"Resume"}<Icon name="arrow-up-right"/></Link></div><CreateFollowUpButton council={council}/></article>;
 }
 export function Dashboard({all=false}:{all?:boolean}){
   const auth=useAuth();

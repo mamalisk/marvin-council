@@ -32,5 +32,9 @@ html,body{margin:0;min-height:100%;background:#101410}html{color-scheme:dark}htm
 #marvin-app .mc-connection-step{padding:22px;background:var(--mc-panel);border:1px solid var(--mc-line);border-radius:var(--mc-radius)}
 #marvin-app .mc-connection-step p{font-size:13px;color:var(--mc-muted);margin:10px 0 16px}
 #marvin-app .mc-code{font:12px/1.7 Consolas,monospace;background:var(--mc-panel2);padding:14px;border-radius:9px;white-space:pre-wrap;overflow-wrap:anywhere}
+#marvin-app .mc-outcomes{min-width:0;overflow-wrap:anywhere}
+#marvin-app .mc-outcome-entry{padding-top:14px;margin-top:14px;border-top:1px solid var(--mc-line)}
+#marvin-app .mc-outcomes summary{cursor:pointer;font-size:12px}
+#marvin-app .mc-outcomes pre{max-height:320px;overflow:auto;overflow-wrap:anywhere;font-size:12px}
 @media(min-width:1100px){#marvin-app .mc-shell{grid-template-columns:190px minmax(0,1fr)}#marvin-app .mc-main{padding:34px}#marvin-app .mc-room-grid{grid-template-columns:minmax(0,1fr) 245px}#marvin-app .mc-auth-form{padding:75px}#marvin-app .mc-auth-copy h1{font-size:48px}}
 @media(max-width:600px){#marvin-app .mc-auth-art{min-height:310px}#marvin-app .mc-window{border:0}#marvin-app .mc-auth{min-height:100dvh}#marvin-app .mc-auth-form{padding:30px 24px}#marvin-app input,#marvin-app textarea,#marvin-app select{font-size:16px!important}#marvin-app .mc-btn{min-height:40px}#marvin-app .mc-step{min-height:34px}#marvin-app .mc-composer-footer .mc-caption{display:none}#marvin-app .mc-assignment{font-size:12px}#marvin-app .mc-message{grid-template-columns:27px minmax(0,1fr);gap:8px}#marvin-app .mc-board .mc-message{padding:10px}}

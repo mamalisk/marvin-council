@@ -94,6 +94,31 @@ Use authenticated SSE for server-to-browser updates, with HTTPS POST for contrib
 
 Send heartbeats, disable response buffering on the event path, and test all ingress layers. Periodically reconnect streams, initially at around two minutes, so session expiry and infrastructure timeouts are handled predictably. Reauthorize each reconnect and close streams when council access is revoked. A disconnected browser must not cancel or restart the council itself.
 
+### Follow-up councils and reusable outcomes
+
+Treat a previous council's outcome as a versioned input to a **new** council. This is separate from resuming the original session to resolve its outstanding questions. The new council can have a different goal, specialist team and human reviewers.
+
+```mermaid
+flowchart LR
+    Discovery["Discovery council"] --> OutcomeA["Outcome A: immutable revision 3"]
+    OutcomeA --> Architecture["Architecture follow-up council"]
+    OutcomeA --> UX["UX follow-up council"]
+    Architecture --> OutcomeB["Outcome B: immutable revision 2"]
+    UX --> OutcomeC["Outcome C: immutable revision 1"]
+    OutcomeB --> Delivery["Delivery planning council"]
+    OutcomeC --> Delivery
+```
+
+Add a `CouncilInputLink` record in PostgreSQL with target session ID, source council/session ID, artifact revision ID, content hash, snapshot object key, approval status at capture, creator and capture time. Keep artifact bytes in S3/Blob Storage and expose only authorized metadata through the API. The database links support both “derived from” and “used by” navigation; no additional cloud service is required.
+
+Create the downstream input reference and lineage record transactionally against an immutable artifact revision. A follow-up must remain reproducible if the source receives a new revision: record and display that a newer version exists, but do not replace input automatically. Preserve source provenance in Markdown exports. Source approvals are historical context, not approvals of the downstream specification.
+
+Authorize both reading the source and sharing its output with all intended downstream humans. Linking an artifact does not grant access to the source council, its chat, or its other documents. Recheck sharing rules when participants or source permissions change. Specify retention and revocation behavior for derived copies before allowing cross-team sharing. Agents receive only the assigned input snapshots; the whole upstream conversation is not copied by default.
+
+New councils receive their own owner authorization, budget and approval lifecycle. Apply organization/project/owner aggregate limits across a chain so follow-ups cannot bypass spending policy. Branching and multiple input outcomes are supported by the graph model. Reject self-links and cycles if links between already-existing sessions are introduced; do not automatically start downstream councils when an upstream result changes.
+
+The current prototype implements this flow for the current Markdown specification using browser-persisted snapshots and source links. The PostgreSQL/object-storage implementation and selection of multiple output artifact types are still required for production.
+
 ## 5. Proposal A — AWS
 
 ### Infrastructure diagram
@@ -359,7 +384,7 @@ For the first release, attribute usage to one sponsoring project/cost center and
 ## 12. Delivery stages and acceptance gates
 
 1. **Corporate OAuth pilot:** select cloud/region, provision web containers and HA PostgreSQL, configure secrets/ingress/GitHub App, apply `db/001-auth.sql`, and validate sign-in, refresh, revocation, model listing and a real greeting. This is not yet a live council service.
-2. **Shared application state:** implement authenticated domain APIs, document storage and scanning, immutable marketplace versions, membership, citations and revision-bound approvals. Replace localStorage as the source of truth.
+2. **Shared application state:** implement authenticated domain APIs, document storage and scanning, immutable marketplace versions, membership, citations, revision-bound approvals, and outcome lineage between follow-up councils. Replace localStorage as the source of truth.
 3. **Durable council runtime:** implement the coordinator, queues, LangGraph checkpointing evaluation, isolated workers, owner credential resolution, Delphi retrieval and real briefing progress.
 4. **Budgets and collaboration:** implement shared reservations, time accounting, distributed cancellation, resumable events and approved transcription. Validate the limits under parallelism, retries and restarts.
 5. **Production readiness:** perform load, failover, backup restore, security and operational drills; verify corporate monitoring and support ownership before general internal release.

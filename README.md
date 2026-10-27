@@ -21,6 +21,7 @@ Open http://127.0.0.1:3000 and choose **Explore the demo**. The app binds to loo
 - Document assignment to all or selected agents. Every human can inspect every council document.
 - Council chat with named specialists, @mentions, quoted replies, structured questions, sample citations, context previews, and an editable voice-transcription preview.
 - Revision-specific human approvals, approval invalidation after an answer changes, and Markdown specification export.
+- Follow-up councils: start from an existing council or choose previous outcomes during setup. Specifications are captured as fixed input revisions with approval status, source links, downstream links, and lineage in Markdown exports. Each new council sets its own goal and approvals; later source edits do not alter captured inputs.
 - Browser persistence for councils, drafts, documents, definitions, and theme preferences.
 
 **Council deliberation, ingestion, usage meters, invitations, council participants, and transcription are simulated.** No microphone recording, multi-user synchronization, live Delphi search, model execution, real budget enforcement, or billing happens in the council UI. The local upload prototype reads Markdown/text; binary files retain metadata only. Data stays in browser localStorage and is not shared between devices. Clear the `marvin-council.workspace.v1` key to reset the demo. OAuth mode namespaces this prototype storage by GitHub user ID and shows the real signed-in identity in the sidebar; simulated council participants remain explicitly separate.

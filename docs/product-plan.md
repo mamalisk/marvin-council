@@ -1,6 +1,6 @@
 # Marvin Council — product plan
 
-Updated: 2026-10-26. Status: discovery baseline, not an implementation specification.
+Updated: 2026-10-27. Status: discovery baseline, not an implementation specification.
 
 This document distinguishes confirmed requirements from proposed design and unresolved dependencies. Implementation update: the Next.js prototype, local SDK diagnostic, and GitHub App web OAuth flow now exist. See `docs/production-oauth.md` for the implemented authentication boundary, setup, and validation limits. Live council orchestration and Delphi integration remain pending.
 
@@ -15,6 +15,7 @@ Success means turning a stated goal, available knowledge, and participant feedba
 ### Councils and participation
 
 - Support reusable named councils with multiple sessions, as well as ad hoc councils with selected people and agents.
+- A new council can follow up another council, using its outcome as input. Keep a traceable link from the input to the originating council and output revision.
 - Support live workshops, unattended agent deliberation, late joining, and asynchronous contributions.
 - A typical council has roughly four agents and one to three humans; asynchronous sessions may involve five to ten people. These are design examples, not hard limits.
 - Support concurrent specialist agents within a session. Each agent has its own specialization, instructions, conversation context, and relevant knowledge retrieved from Delphi KB.
@@ -86,6 +87,18 @@ Separate Council, Session, AgentTemplate, AgentVersion, TraitVersion, SkillVersi
 A reusable council stores defaults. Each session snapshots its participating agent configurations and source versions. Ad hoc councils use the same session machinery without requiring users to establish a reusable team first.
 
 Keep published templates, personal/team customizations, and session-specific overrides distinct. Downloadable Markdown should preserve useful metadata using a documented format; compatibility with the existing Marvin files must be examined before selecting that format.
+
+### Follow-up councils and outcome lineage
+
+A follow-up is a **new council/session with a new goal**, distinct from resuming the same unfinished session. Offer “Create follow-up council” on an existing council and a previous-outcome picker during new council setup. A discovery council can therefore hand its output to an architecture council, which can hand its output to a delivery-planning council. One outcome can feed several follow-ups; a new council can combine several prior outcomes.
+
+Recommended behavior: attach selected artifact revisions as immutable context snapshots, record the source council/session and revision, capture approval status, and display links in both directions. Later source edits must not silently change the downstream input. Display a newer-source notice and require an explicit replacement/review. Unapproved output may be useful input, but must remain visibly unapproved; its approvals do not approve the new council.
+
+Follow-ups define their own GROW scope, agents, invitees, execution owner consent, budgets and approval quorum. A new session has its own budget; project/owner aggregate quotas still apply across related councils. Do not copy the full upstream chat or all source documents by default.
+
+Production requires permission to read and share the source artifact with the target council's participants. A lineage link must not grant access to the source council. Preserve provenance in Markdown exports, enforce access rules after membership changes, and reject cycles if linking existing sessions is later supported.
+
+Prototype implementation (27 October 2026): current `specification.md` output can be captured during setup or through the follow-up action, assigned to agents as context, previewed, removed from a draft, and traced in both directions. Captures persist in browser storage and include source revision and approval counts. Shared backend lineage and multi-artifact revision selection remain production work.
 
 ### GROW workflow and disagreement
 

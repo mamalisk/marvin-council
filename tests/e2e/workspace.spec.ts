@@ -117,3 +117,56 @@ test("web OAuth connection uses the authenticated endpoint and exposes no token 
   expect(bodies).toEqual([{action:"status"},{action:"chat",model:"test-model"}]);
   await page.screenshot({path:"test-results/oauth-connection.png",fullPage:true});
 });
+
+test("follow-up council keeps a fixed input and links both directions after source changes",async({page})=>{
+  await page.goto("/councils/research-workspace");
+  await page.getByRole("button",{name:"Create follow-up council",exact:true}).click();
+  await expect(page.getByLabel("Council name",{exact:true})).toHaveValue("Follow-up: A more useful research workspace");
+  await expect(page.getByPlaceholder("What do we need to achieve?")).toHaveValue("");
+  const linked=page.getByRole("region",{name:"Previous council outputs"});
+  await expect(linked).toContainText("Not approved at capture");
+  await linked.getByText("Read captured specification v3",{exact:true}).click();
+  await expect(linked.locator("pre")).toContainText("Allow clients to save and resume across devices.");
+  await page.getByLabel("Council name",{exact:true}).fill("Implementation planning");
+  await page.getByPlaceholder("What do we need to achieve?").fill("Turn the research outcome into an implementation plan.");
+  await page.getByRole("button",{name:"Continue",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Skip context",exact:true})).toHaveCount(0);
+  await page.getByRole("button",{name:"Continue",exact:true}).click();
+  await page.getByRole("button",{name:"Complete demo briefing"}).click();
+  await page.getByRole("button",{name:"Continue to launch"}).click();
+  await page.getByRole("button",{name:"Start live session"}).click();
+  await expect(page.getByRole("heading",{name:"Implementation planning",exact:true})).toBeVisible();
+  const followUpUrl=page.url();
+  await expect(page.getByText("0 / 2 human approvals",{exact:true})).toBeVisible();
+  await page.reload();
+  await page.getByRole("region",{name:"Previous council outputs"}).getByRole("link",{name:"Open source council"}).click();
+  await expect(page.getByRole("region",{name:"Follow-up councils"}).getByRole("link",{name:"Implementation planning"})).toBeVisible();
+  await page.getByRole("button",{name:"Revise answer"}).click();
+  await page.getByLabel("Message the council").fill("The source now requires an entirely different approach.");
+  await page.getByRole("button",{name:"Send",exact:true}).click();
+  await page.getByRole("region",{name:"Follow-up councils"}).getByRole("link",{name:"Implementation planning"}).click();
+  await expect(page).toHaveURL(followUpUrl);
+  const snapshot=page.getByRole("region",{name:"Previous council outputs"});
+  await expect(snapshot).toContainText("Source is now v4. This input remains v3.");
+  await snapshot.getByText("Read captured specification v3",{exact:true}).click();
+  await expect(snapshot.locator("pre")).toContainText("Allow clients to save and resume across devices.");
+  await expect(snapshot.locator("pre")).not.toContainText("entirely different approach");
+  await page.screenshot({path:"test-results/follow-up-council.png",fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBe(true);
+});
+
+test("new council can select and remove previous outcomes without losing its scope",async({page})=>{
+  await page.goto("/councils/new");
+  await page.getByLabel("Council name",{exact:true}).fill("My next review");
+  await page.getByPlaceholder("What do we need to achieve?").fill("Investigate the next step.");
+  await page.getByLabel("Previous council outcome",{exact:true}).selectOption("research-workspace");
+  await page.getByRole("button",{name:"Use outcome as input",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Outcome already attached"})).toBeDisabled();
+  await expect(page.getByLabel("Council name",{exact:true})).toHaveValue("My next review");
+  await page.reload();
+  await expect(page.getByRole("region",{name:"Previous council outputs"})).toContainText("A more useful research workspace");
+  await page.getByRole("button",{name:"Remove outcome from A more useful research workspace"}).click();
+  await expect(page.getByRole("region",{name:"Previous council outputs"})).toHaveCount(0);
+  await expect(page.getByPlaceholder("What do we need to achieve?")).toHaveValue("Investigate the next step.");
+});
