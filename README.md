@@ -60,7 +60,7 @@ See GitHub's [CLI authentication guide](https://docs.github.com/en/copilot/how-t
 
 ## Production web OAuth
 
-The web flow is implemented using a GitHub App, PostgreSQL-backed sessions, encrypted server-side tokens, S256 PKCE/state validation, explicit user allowlists or active organization membership checks, token refresh, sign-out, disconnect/revocation, and signed revocation webhooks. Each SDK check receives the authenticated user's token with local credential fallback disabled.
+The web flow is implemented using a GitHub App, PostgreSQL-backed sessions, encrypted server-side tokens, S256 PKCE/state validation, user/organization/enterprise allowlists, token refresh, sign-out, disconnect/revocation, and signed revocation webhooks. Enterprise access queries the authenticated GraphQL viewer's memberships and denies access if verification fails; this field's availability to the production GitHub App still requires live validation. See [production OAuth setup](docs/production-oauth.md) for `GITHUB_ALLOWED_ENTERPRISES` and its permission limitations. Each SDK check receives the authenticated user's token with local credential fallback disabled.
 
 1. Register the GitHub App with callback `/api/auth/github/callback`, Members read permission, expiring user tokens, and webhook `/api/auth/github/webhook`.
 2. Configure `.env.local` from `.env.example`, including the exact `APP_ORIGIN`, allowed users or organizations, database, encryption key, and GitHub secrets.

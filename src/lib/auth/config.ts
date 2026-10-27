@@ -5,6 +5,7 @@ export type AuthConfig = {
   encryptionKey: Buffer;
   organizations: string[];
   users: string[];
+  enterprises: string[];
   databaseUrl: string;
   webhookSecret?: string;
   secureCookies: boolean;
@@ -25,17 +26,19 @@ export function authConfig(env: Record<string, string | undefined> = process.env
   }
   const key = Buffer.from(env.AUTH_ENCRYPTION_KEY!, "base64");
   if (key.length !== 32 || key.toString("base64") !== env.AUTH_ENCRYPTION_KEY) throw new Error("AUTH_ENCRYPTION_KEY must be 32 random bytes encoded as base64.");
-  const names = (key: string) => {
+  const names = (key: string, pattern: RegExp) => {
     const entries = [...new Set((env[key] || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean))];
-    if (entries.length > 10 || entries.some(s => !/^[a-z0-9][a-z0-9-]{0,38}$/.test(s))) throw new Error(`${key} must contain up to ten GitHub logins.`);
+    if (entries.length > 10 || entries.some(s => !pattern.test(s))) throw new Error(`${key} must contain up to ten GitHub logins.`);
     return entries;
   };
-  const organizations = names("GITHUB_ALLOWED_ORGS");
-  const users = names("GITHUB_ALLOWED_USERS");
-  if (!organizations.length && !users.length) throw new Error("Configure GITHUB_ALLOWED_ORGS or GITHUB_ALLOWED_USERS. Public sign-up is not enabled.");
+  const organizations = names("GITHUB_ALLOWED_ORGS", /^[a-z0-9][a-z0-9-]{0,38}$/);
+  // Enterprise Managed User logins include an underscore and enterprise shortcode.
+  const users = names("GITHUB_ALLOWED_USERS", /^[a-z0-9][a-z0-9_-]{0,38}$/);
+  const enterprises = names("GITHUB_ALLOWED_ENTERPRISES", /^[a-z0-9][a-z0-9-]{0,38}$/);
+  if (!organizations.length && !users.length && !enterprises.length) throw new Error("Configure GITHUB_ALLOWED_ORGS, GITHUB_ALLOWED_USERS or GITHUB_ALLOWED_ENTERPRISES. Public sign-up is not enabled.");
   if (env.NODE_ENV === "production" && !env.GITHUB_WEBHOOK_SECRET) throw new Error("GITHUB_WEBHOOK_SECRET is required in production.");
   return {origin: url.origin, clientId: env.GITHUB_CLIENT_ID!, clientSecret: env.GITHUB_CLIENT_SECRET!, encryptionKey: key,
-    organizations, users, databaseUrl: env.DATABASE_URL!, webhookSecret: env.GITHUB_WEBHOOK_SECRET, secureCookies: url.protocol === "https:"};
+    organizations, users, enterprises, databaseUrl: env.DATABASE_URL!, webhookSecret: env.GITHUB_WEBHOOK_SECRET, secureCookies: url.protocol === "https:"};
 }
 
 export function cookieNames(secure: boolean) {

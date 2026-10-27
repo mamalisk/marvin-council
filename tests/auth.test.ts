@@ -12,7 +12,7 @@ import {isolatedRuntimeEnvironment, createOAuthRuntime} from "../src/lib/copilot
 import {NextRequest} from "next/server";
 import {boundedBody, BodyTooLarge} from "../src/lib/bounded-body";
 
-const config: AuthConfig = {origin:"https://marvin.example",clientId:"test-client",clientSecret:"test-secret",encryptionKey:Buffer.alloc(32,7),organizations:["our-org"],users:[],databaseUrl:"unused",webhookSecret:"test-webhook",secureCookies:true};
+const config: AuthConfig = {origin:"https://marvin.example",clientId:"test-client",clientSecret:"test-secret",encryptionKey:Buffer.alloc(32,7),organizations:["our-org"],users:[],enterprises:[],databaseUrl:"unused",webhookSecret:"test-webhook",secureCookies:true};
 let engine: PGlite;
 let db: Database;
 let calls: {url:string;init:RequestInit}[];
@@ -126,6 +126,36 @@ test("user and organization access are alternatives, while failed identity looku
   await assert.rejects(provider.identity("ghu_second"),codeIs("provider"));
 });
 
+test("managed user access requires an exact verified login, not a shared enterprise suffix",async()=>{
+  const managed = {...config,organizations:[],users:["mamalisk","kostas-mamalis_lseg"]};
+  let login="kostas-mamalis_LSEG";
+  const provider = new GitHubOAuth(managed,async()=>Response.json({id:3,login}));
+  assert.equal((await provider.identity("test-token")).login,login);
+  login="another-user_LSEG";
+  await assert.rejects(provider.identity("test-token"),codeIs("forbidden"));
+});
+
+test("enterprise membership loss invalidates sessions; an unavailable check denies requests without destroying credentials",async()=>{
+  const enterprise = {...config,organizations:[],enterprises:["lseg"]};
+  let slugs=["lseg"], unavailable=false;
+  const enterpriseRequest: typeof fetch = async(input,init)=>String(input)==="https://api.github.com/graphql"
+    ? Response.json(unavailable ? {errors:[{message:"provider detail"}]} : {data:{viewer:{databaseId:1,enterprises:{nodes:slugs.map(slug=>({slug})),pageInfo:{hasNextPage:false,endCursor:null}}}}})
+    : request(input,init);
+  service = new AuthService(enterprise,db,new GitHubOAuth(enterprise,enterpriseRequest));
+  const signedIn=await login();
+  unavailable=true;
+  await assert.rejects(service.authenticate(signedIn.session,true),codeIs("enterprise_check_failed"));
+  assert.equal((await db.query("SELECT * FROM marvin_auth_sessions")).rows.length,1);
+  unavailable=false;
+  assert.equal((await service.authenticate(signedIn.session,true)).login,"alice");
+  slugs=[];
+  await assert.rejects(service.authenticate(signedIn.session,true),codeIs("forbidden"));
+  assert.equal((await db.query("SELECT * FROM marvin_auth_sessions")).rows.length,0);
+  assert.equal((await db.query("SELECT tokens FROM marvin_auth_users WHERE github_id='1'")).rows[0].tokens,null);
+  await assert.rejects(login(),codeIs("forbidden"));
+  assert.equal((await db.query("SELECT * FROM marvin_auth_sessions")).rows.length,0);
+});
+
 test("sessions isolate identities, rotate on login, and expire",async()=>{
   const first=await login(),second=await login("second-user");
   assert.equal((await service.authenticate(first.session)).accessToken,"ghu_original");
@@ -194,7 +224,13 @@ test("production configuration, cookies, request origins and webhook signatures 
   const personal = authConfig({...env,GITHUB_ALLOWED_ORGS:"",GITHUB_ALLOWED_USERS:" MaMaLiSk, mamalisk "});
   assert.deepEqual(personal.organizations,[]);
   assert.deepEqual(personal.users,["mamalisk"]);
-  for(const users of ["", " , ", "*", "@mamalisk", "https://github.com/mamalisk", Array.from({length:11},(_,i)=>`user-${i}`).join(",")]) {
+  assert.deepEqual(authConfig({...env,GITHUB_ALLOWED_ORGS:"",GITHUB_ALLOWED_ENTERPRISES:" LSEG, lseg "}).enterprises,["lseg"]);
+  for(const enterprise of ["*","https://github.com/enterprises/lseg","@lseg","lseg_bad",Array.from({length:11},(_,i)=>`enterprise-${i}`).join(",")]) {
+    assert.throws(()=>authConfig({...env,GITHUB_ALLOWED_ENTERPRISES:enterprise}));
+  }
+  assert.deepEqual(authConfig({...env,GITHUB_ALLOWED_ORGS:"",GITHUB_ALLOWED_USERS:"mamalisk, kostas-mamalis_LSEG"}).users,["mamalisk","kostas-mamalis_lseg"]);
+  assert.throws(()=>authConfig({...env,GITHUB_ALLOWED_ORGS:"some_org",GITHUB_ALLOWED_USERS:"mamalisk"}));
+  for(const users of ["", " , ", "*", "*_LSEG", "@mamalisk", "https://github.com/mamalisk", Array.from({length:11},(_,i)=>`user-${i}`).join(",")]) {
     assert.throws(()=>authConfig({...env,GITHUB_ALLOWED_ORGS:"",GITHUB_ALLOWED_USERS:users}));
   }
   assert.throws(()=>authConfig({...env,GITHUB_ALLOWED_ORGS:"*",GITHUB_ALLOWED_USERS:"mamalisk"}));
@@ -221,7 +257,7 @@ test("OAuth runtimes use explicit tokens, separate directories, and no ambient s
 });
 
 async function withRoutes(operation:()=>Promise<void>){
-  const env={AUTH_MODE:"github",APP_ORIGIN:config.origin,GITHUB_CLIENT_ID:config.clientId,GITHUB_CLIENT_SECRET:config.clientSecret,AUTH_ENCRYPTION_KEY:config.encryptionKey.toString("base64"),DATABASE_URL:config.databaseUrl,GITHUB_ALLOWED_ORGS:"our-org",GITHUB_ALLOWED_USERS:"",GITHUB_WEBHOOK_SECRET:config.webhookSecret!};
+  const env={AUTH_MODE:"github",APP_ORIGIN:config.origin,GITHUB_CLIENT_ID:config.clientId,GITHUB_CLIENT_SECRET:config.clientSecret,AUTH_ENCRYPTION_KEY:config.encryptionKey.toString("base64"),DATABASE_URL:config.databaseUrl,GITHUB_ALLOWED_ORGS:"our-org",GITHUB_ALLOWED_USERS:"",GITHUB_ALLOWED_ENTERPRISES:"",GITHUB_WEBHOOK_SECRET:config.webhookSecret!};
   const previous=Object.fromEntries(Object.keys(env).map(k=>[k,process.env[k]]));
   Object.assign(process.env,env);
   const root=globalThis as typeof globalThis&{marvinAuthPool?:unknown};

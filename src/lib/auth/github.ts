@@ -1,7 +1,7 @@
 import type {AuthConfig} from "./config";
 
 export class AuthError extends Error {
-  constructor(public code: "unauthorized" | "forbidden" | "provider" | "invalid_flow" | "rate_limited") { super(code); }
+  constructor(public code: "unauthorized" | "forbidden" | "provider" | "enterprise_check_failed" | "invalid_flow" | "rate_limited") { super(code); }
 }
 export type Identity = {id: string; login: string; name: string};
 export type Tokens = {accessToken: string; refreshToken?: string; expiresAt?: number; refreshExpiresAt?: number};
@@ -11,7 +11,8 @@ export class GitHubOAuth {
   constructor(private config: AuthConfig, private request: typeof fetch = fetch) {}
 
   private async call(url: string, init: RequestInit) {
-    try { return await this.request(url, {...init, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10000)}); }
+    const timeout = AbortSignal.timeout(10000);
+    try { return await this.request(url, {...init, cache: "no-store", redirect: "error", signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout}); }
     catch { throw new AuthError("provider"); }
   }
 
@@ -40,6 +41,55 @@ export class GitHubOAuth {
     return this.call(`https://api.github.com${path}`, {headers: {Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}});
   }
 
+  private async enterpriseMember(token: string, identity: Identity): Promise<boolean> {
+    if (!this.config.enterprises.length) return false;
+    const query = `query MarvinEnterpriseMembership($after: String) {
+      viewer {
+        databaseId
+        enterprises(first: 100, after: $after, membershipType: ALL) {
+          nodes { slug }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }`;
+    // Bound both total time and pagination. Never follow provider-supplied URLs.
+    const deadline = AbortSignal.timeout(10000);
+    const cursors = new Set<string>();
+    let after: string | null = null;
+    try {
+      for (let page = 0; page < 5; page++) {
+        deadline.throwIfAborted();
+        const response = await this.call("https://api.github.com/graphql", {
+          method: "POST", signal: deadline,
+          headers: {Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/json"},
+          body: JSON.stringify({query, variables: {after}}),
+        });
+        if (response.status === 401) throw new AuthError("unauthorized");
+        if (!response.ok) throw new AuthError("enterprise_check_failed");
+        const body = await response.json();
+        // GraphQL may return HTTP 200 with errors and partial data. Neither is proof of access.
+        if (!body || (body.errors !== undefined && (!Array.isArray(body.errors) || body.errors.length))) throw new AuthError("enterprise_check_failed");
+        const viewer = body.data?.viewer;
+        const connection = viewer?.enterprises;
+        if (!Number.isSafeInteger(viewer?.databaseId) || String(viewer.databaseId) !== identity.id ||
+            !Array.isArray(connection?.nodes) || connection.nodes.length > 100 ||
+            !connection.nodes.every((node: unknown) => node !== null && typeof node === "object" && "slug" in node && typeof node.slug === "string" && /^[a-z0-9][a-z0-9-]{0,38}$/i.test(node.slug)) ||
+            typeof connection.pageInfo?.hasNextPage !== "boolean") throw new AuthError("enterprise_check_failed");
+        if (connection.nodes.some((node: {slug: string}) => this.config.enterprises.includes(node.slug.toLowerCase()))) return true;
+        if (!connection.pageInfo.hasNextPage) return false;
+        const cursor = connection.pageInfo.endCursor;
+        if (typeof cursor !== "string" || !cursor || cursor.length > 2048 || cursors.has(cursor)) throw new AuthError("enterprise_check_failed");
+        cursors.add(cursor);
+        after = cursor;
+      }
+    } catch (error) {
+      if (error instanceof AuthError && error.code === "unauthorized") throw error;
+      // Do not expose GraphQL messages, query variables or provider credentials.
+      throw new AuthError("enterprise_check_failed");
+    }
+    throw new AuthError("enterprise_check_failed");
+  }
+
   async identity(token: string): Promise<Identity> {
     const response = await this.api("/user", token);
     if (response.status === 401) throw new AuthError("unauthorized");
@@ -55,6 +105,7 @@ export class GitHubOAuth {
       if (membership.ok && (await membership.json()).state === "active") return identity;
       if (![200, 403, 404].includes(membership.status)) throw new AuthError("provider");
     }
+    if (await this.enterpriseMember(token, identity)) return identity;
     throw new AuthError("forbidden");
   }
 

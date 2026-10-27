@@ -4,7 +4,8 @@ import {AuthError} from "./github";
 export const publicAuthErrors: Record<string, string> = {
   unauthorized: "Sign in with GitHub to continue.",
   signin_required: "Sign in with GitHub to open your workspace.",
-  forbidden: "This GitHub account is not authorized. Ask the administrator to check the user allowlist or your membership in an allowed organization.",
+  forbidden: "This GitHub account is not authorized. Ask the administrator to check the user allowlist or your membership in an allowed organization or enterprise.",
+  enterprise_check_failed: "GitHub enterprise membership could not be verified. Ask the administrator to check GitHub App access, enterprise approval and GraphQL support, then retry.",
   provider: "GitHub could not complete this request. Check corporate network access and retry.",
   invalid_flow: "This sign-in attempt expired or could not be verified. Start again from this page.",
   rate_limited: "Too many Copilot checks. Wait a minute before trying again.",
