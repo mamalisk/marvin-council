@@ -2,8 +2,9 @@ import {mkdir} from "node:fs/promises";
 import path from "node:path";
 import {CopilotClient,type CopilotSession} from "@github/copilot-sdk";
 import {createOAuthRuntime} from "./copilot-runtime";
+import {copilotFailure, type ProbeStage} from "./copilot-diagnostics";
 
-export type ProbeResult={runtime:boolean;authenticated:boolean;login?:string;authType?:string;models:{id:string;name:string}[];reply?:string;error?:string};
+export type ProbeResult={runtime:boolean;authenticated:boolean;authChecked?:boolean;stage?:ProbeStage;code?:string;login?:string;authType?:string;models:{id:string;name:string}[];reply?:string;error?:string};
 const active = new Set<string>();
 export function safeDiagnostic(error:unknown):string {
   const text=error instanceof Error?error.message:"Unknown SDK error";
@@ -15,7 +16,8 @@ export async function probeCopilot(action:"status"|"chat",model?:string,owner?:{
   active.add(key);
   let isolated:Awaited<ReturnType<typeof createOAuthRuntime>>|undefined;
   let client:CopilotClient|undefined,session:CopilotSession|undefined,timer:ReturnType<typeof setTimeout>|undefined;
-  const result:ProbeResult={runtime:false,authenticated:false,models:[]};
+  const result:ProbeResult={runtime:false,authenticated:false,authChecked:false,models:[]};
+  let stage:ProbeStage="runtime";
   try {
     if(owner){
       isolated=await createOAuthRuntime(owner.accessToken);
@@ -28,14 +30,18 @@ export async function probeCopilot(action:"status"|"chat",model?:string,owner?:{
     const work=async()=>{
       await client!.start();
       result.runtime=true;
+      stage="authentication";
       const auth=await client!.getAuthStatus();
+      result.authChecked=true;
       result.authenticated=auth.isAuthenticated;
       result.login=auth.login;
       result.authType=auth.authType;
-      if(!auth.isAuthenticated)return result;
+      if(!auth.isAuthenticated)return {...result,stage,code:"copilot_unauthenticated",error:"The runtime started, but Copilot did not authenticate this account. GitHub web sign-in alone does not confirm Copilot access."};
+      stage="models";
       const models=await client!.listModels();
       result.models=models.filter(m=>m.policy?.state!=="disabled").map(m=>({id:m.id,name:m.name}));
       if(action==="chat"){
+        stage="chat";
         if(!model||!result.models.some(m=>m.id===model))throw new Error("Select an available model after checking access.");
         session=await client!.createSession({model,availableTools:[],excludedTools:["builtin:*","mcp:*","custom:*"],onPermissionRequest:()=>({kind:"reject",feedback:"This connection test does not permit tools."}),systemMessage:{mode:"replace",content:"You are testing connectivity. Reply briefly to the user's greeting. Do not invoke tools."}});
         const response=await session.sendAndWait({prompt:"Reply with exactly: Marvin Council is connected."},25000);
@@ -44,8 +50,12 @@ export async function probeCopilot(action:"status"|"chat",model?:string,owner?:{
       }
       return result;
     };
-    return await Promise.race([work(),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("Copilot diagnostic timed out. Check sign-in, network access, and organization policy.")),40000);})]);
-  }catch(error){return {...result,error:owner?"Copilot could not complete the check. Verify entitlement, organization policy, model availability, and network access.":safeDiagnostic(error)};}
+    return await Promise.race([work(),new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error("Marvin Copilot diagnostic timed out")),40000);})]);
+  }catch(error){
+    const failure=copilotFailure(error,stage);
+    if(owner)console.error("marvin.copilot.probe",{stage,code:failure.code});
+    return {...result,stage,...failure,...(!owner?{error:safeDiagnostic(error)}:{})};
+  }
   finally {
     if(timer)clearTimeout(timer);
     // sendAndWait timeout only stops waiting. Stop the runtime as well, including any in-flight work.

@@ -7,6 +7,8 @@ import {probeCopilot} from "@/lib/copilot-probe";
 import {boundedBody, BodyTooLarge} from "@/lib/bounded-body";
 
 export const runtime = "nodejs";
+// Allow the bounded 40-second probe plus authentication and runtime cleanup.
+export const maxDuration = 90;
 export async function POST(request: NextRequest) {
   try {
     const service = authService();

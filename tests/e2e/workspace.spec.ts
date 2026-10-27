@@ -118,6 +118,18 @@ test("web OAuth connection uses the authenticated endpoint and exposes no token 
   await page.screenshot({path:"test-results/oauth-connection.png",fullPage:true});
 });
 
+test("runtime startup failure does not claim Copilot authentication was rejected",async({page})=>{
+  await page.route("**/api/auth/session",route=>route.fulfill({json:{mode:"github",user:{id:"42",login:"test-user",name:"Test User"}}}));
+  await page.route("**/api/copilot",route=>route.fulfill({json:{runtime:false,authenticated:false,authChecked:false,models:[],stage:"runtime",code:"runtime_missing",error:"The Copilot runtime is missing from this deployment."}}));
+  await page.goto("/connection");
+  await page.getByRole("button",{name:"Check Copilot access"}).click();
+  await expect(page.getByText("Copilot authentication not checked",{exact:true})).toBeVisible();
+  await expect(page.getByText("Not authenticated",{exact:true})).toHaveCount(0);
+  await expect(page.getByText("Models not checked",{exact:true})).toBeVisible();
+  await expect(page.getByRole("alert").filter({hasText:"runtime_missing"})).toBeVisible();
+  await expect(page.getByRole("button",{name:"Send test greeting"})).toBeDisabled();
+});
+
 test("follow-up council keeps a fixed input and links both directions after source changes",async({page})=>{
   await page.goto("/councils/research-workspace");
   await page.getByRole("button",{name:"Create follow-up council",exact:true}).click();
