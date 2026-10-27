@@ -76,7 +76,7 @@ export class AuthService {
           refreshed = true;
         }
         let identity: Identity = {id: user.github_id, login: user.login, name: user.display_name};
-        // Recheck membership for each model operation and at most every five minutes for page/session reads.
+        // Recheck access policy for each model operation and at most every five minutes for page/session reads.
         if (refreshed || forProbe || Number(user.verified_at) < Date.now() - 300000) {
           identity = await this.github.identity(tokens.accessToken);
           if (identity.id !== user.github_id) throw new AuthError("unauthorized");

@@ -46,10 +46,13 @@ export class GitHubOAuth {
     if (!response.ok) throw new AuthError("provider");
     const user = await response.json();
     if (!Number.isSafeInteger(user.id) || user.id <= 0 || typeof user.login !== "string") throw new AuthError("provider");
+    const identity = {id: String(user.id), login: user.login, name: typeof user.name === "string" && user.name ? user.name : user.login};
+    // Only trust the identity returned by GitHub for this user's token.
+    if (this.config.users.includes(user.login.toLowerCase())) return identity;
     for (const org of this.config.organizations) {
       const membership = await this.api(`/user/memberships/orgs/${encodeURIComponent(org)}`, token);
       if (membership.status === 401) throw new AuthError("unauthorized");
-      if (membership.ok && (await membership.json()).state === "active") return {id: String(user.id), login: user.login, name: typeof user.name === "string" && user.name ? user.name : user.login};
+      if (membership.ok && (await membership.json()).state === "active") return identity;
       if (![200, 403, 404].includes(membership.status)) throw new AuthError("provider");
     }
     throw new AuthError("forbidden");

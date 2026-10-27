@@ -4,6 +4,7 @@ export type AuthConfig = {
   clientSecret: string;
   encryptionKey: Buffer;
   organizations: string[];
+  users: string[];
   databaseUrl: string;
   webhookSecret?: string;
   secureCookies: boolean;
@@ -14,7 +15,7 @@ export function demoEnabled(env: Record<string, string | undefined> = process.en
 }
 
 export function authConfig(env: Record<string, string | undefined> = process.env): AuthConfig {
-  const required = ["APP_ORIGIN", "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "AUTH_ENCRYPTION_KEY", "DATABASE_URL", "GITHUB_ALLOWED_ORGS"];
+  const required = ["APP_ORIGIN", "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET", "AUTH_ENCRYPTION_KEY", "DATABASE_URL"];
   if (required.some(key => !env[key]?.trim())) throw new Error("GitHub sign-in is not configured. See docs/production-oauth.md.");
   const url = new URL(env.APP_ORIGIN!);
   const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
@@ -24,11 +25,17 @@ export function authConfig(env: Record<string, string | undefined> = process.env
   }
   const key = Buffer.from(env.AUTH_ENCRYPTION_KEY!, "base64");
   if (key.length !== 32 || key.toString("base64") !== env.AUTH_ENCRYPTION_KEY) throw new Error("AUTH_ENCRYPTION_KEY must be 32 random bytes encoded as base64.");
-  const organizations = env.GITHUB_ALLOWED_ORGS!.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-  if (!organizations.length || organizations.length > 10 || organizations.some(s => !/^[a-z0-9][a-z0-9-]{0,38}$/.test(s))) throw new Error("Configure between one and ten GitHub organization names.");
+  const names = (key: string) => {
+    const entries = [...new Set((env[key] || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean))];
+    if (entries.length > 10 || entries.some(s => !/^[a-z0-9][a-z0-9-]{0,38}$/.test(s))) throw new Error(`${key} must contain up to ten GitHub logins.`);
+    return entries;
+  };
+  const organizations = names("GITHUB_ALLOWED_ORGS");
+  const users = names("GITHUB_ALLOWED_USERS");
+  if (!organizations.length && !users.length) throw new Error("Configure GITHUB_ALLOWED_ORGS or GITHUB_ALLOWED_USERS. Public sign-up is not enabled.");
   if (env.NODE_ENV === "production" && !env.GITHUB_WEBHOOK_SECRET) throw new Error("GITHUB_WEBHOOK_SECRET is required in production.");
   return {origin: url.origin, clientId: env.GITHUB_CLIENT_ID!, clientSecret: env.GITHUB_CLIENT_SECRET!, encryptionKey: key,
-    organizations, databaseUrl: env.DATABASE_URL!, webhookSecret: env.GITHUB_WEBHOOK_SECRET, secureCookies: url.protocol === "https:"};
+    organizations, users, databaseUrl: env.DATABASE_URL!, webhookSecret: env.GITHUB_WEBHOOK_SECRET, secureCookies: url.protocol === "https:"};
 }
 
 export function cookieNames(secure: boolean) {
