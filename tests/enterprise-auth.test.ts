@@ -71,3 +71,24 @@ test("pagination loops and page exhaustion fail closed",async()=>{
   await assert.rejects(provider(()=>Response.json(page([],String(++calls)))).identity("test-token"),codeIs("enterprise_check_failed"));
   assert.equal(calls,5);
 });
+
+test("enterprise diagnostics distinguish failures without logging identities, tokens or upstream text",async(t)=>{
+  const logs:unknown[][]=[];
+  t.mock.method(console,"warn",(...args:unknown[])=>logs.push(args));
+  const cases:[()=>Response, string, number][]=[
+    [()=>Response.json({errors:[{type:"FORBIDDEN",message:"private employee_LSEG test-token"}]}),"graphql_access_denied",200],
+    [()=>Response.json({errors:[{extensions:{code:"undefinedField"},message:"private"}]}),"graphql_query_unsupported",200],
+    [()=>Response.json({errors:[{type:"unknown secret"}]}),"graphql_error",200],
+    [()=>Response.json({data:{viewer:{databaseId:42,enterprises:null}}}),"membership_unavailable",200],
+    [()=>Response.json(page(["lseg"],null,99)),"identity_mismatch",200],
+    [()=>new Response("private",{status:403}),"http_access_denied",403],
+    [()=>new Response("private",{status:429}),"rate_limited",429],
+    [()=>new Response("private"),"invalid_json",200],
+  ];
+  for(const [respond,diagnostic,httpStatus] of cases){
+    await assert.rejects(provider(respond).identity("test-token"),codeIs("enterprise_check_failed"));
+    assert.deepEqual(logs.pop(),["marvin.auth.enterprise",{diagnostic,httpStatus}]);
+  }
+  await assert.rejects(provider(()=>{throw new Error("private test-token");}).identity("test-token"),codeIs("enterprise_check_failed"));
+  assert.deepEqual(logs.pop(),["marvin.auth.enterprise",{diagnostic:"network_error"}]);
+});

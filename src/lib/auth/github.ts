@@ -7,6 +7,17 @@ export type Identity = {id: string; login: string; name: string};
 export type Tokens = {accessToken: string; refreshToken?: string; expiresAt?: number; refreshExpiresAt?: number};
 type TokenResponse = {access_token?: unknown; token_type?: unknown; refresh_token?: unknown; expires_in?: unknown; refresh_token_expires_in?: unknown; error?: unknown};
 
+// Classify upstream errors without recording their messages, paths or user data.
+function enterpriseGraphqlDiagnostic(errors: unknown): string {
+  if (!Array.isArray(errors)) return "invalid_response";
+  const kinds = errors.flatMap(error => error && typeof error === "object"
+    ? [error.type, error.extensions?.code] : []);
+  if (kinds.some(kind => ["FORBIDDEN", "INSUFFICIENT_SCOPES", "UNAUTHORIZED"].includes(kind))) return "graphql_access_denied";
+  if (kinds.some(kind => ["undefinedField", "argumentNotAccepted", "GRAPHQL_VALIDATION_FAILED"].includes(kind))) return "graphql_query_unsupported";
+  if (kinds.includes("RATE_LIMITED")) return "rate_limited";
+  return "graphql_error";
+}
+
 export class GitHubOAuth {
   constructor(private config: AuthConfig, private request: typeof fetch = fetch) {}
 
@@ -56,38 +67,61 @@ export class GitHubOAuth {
     const deadline = AbortSignal.timeout(10000);
     const cursors = new Set<string>();
     let after: string | null = null;
+    let diagnostic = "network_error";
+    let httpStatus: number | undefined;
     try {
       for (let page = 0; page < 5; page++) {
         deadline.throwIfAborted();
+        diagnostic = "network_error";
+        httpStatus = undefined;
         const response = await this.call("https://api.github.com/graphql", {
           method: "POST", signal: deadline,
           headers: {Authorization: `Bearer ${token}`, Accept: "application/json", "Content-Type": "application/json"},
           body: JSON.stringify({query, variables: {after}}),
         });
+        httpStatus = response.status;
         if (response.status === 401) throw new AuthError("unauthorized");
-        if (!response.ok) throw new AuthError("enterprise_check_failed");
+        if (!response.ok) {
+          diagnostic = response.status === 403 ? "http_access_denied" : response.status === 429 ? "rate_limited" : "http_error";
+          throw new AuthError("enterprise_check_failed");
+        }
+        diagnostic = "invalid_json";
         const body = await response.json();
         // GraphQL may return HTTP 200 with errors and partial data. Neither is proof of access.
-        if (!body || (body.errors !== undefined && (!Array.isArray(body.errors) || body.errors.length))) throw new AuthError("enterprise_check_failed");
+        diagnostic = "invalid_response";
+        if (!body || (body.errors !== undefined && (!Array.isArray(body.errors) || body.errors.length))) {
+          diagnostic = body ? enterpriseGraphqlDiagnostic(body.errors) : "invalid_response";
+          throw new AuthError("enterprise_check_failed");
+        }
         const viewer = body.data?.viewer;
         const connection = viewer?.enterprises;
-        if (!Number.isSafeInteger(viewer?.databaseId) || String(viewer.databaseId) !== identity.id ||
-            !Array.isArray(connection?.nodes) || connection.nodes.length > 100 ||
+        if (!Number.isSafeInteger(viewer?.databaseId) || String(viewer.databaseId) !== identity.id) {
+          diagnostic = "identity_mismatch";
+          throw new AuthError("enterprise_check_failed");
+        }
+        if (connection === null || connection === undefined) {
+          diagnostic = "membership_unavailable";
+          throw new AuthError("enterprise_check_failed");
+        }
+        if (!Array.isArray(connection.nodes) || connection.nodes.length > 100 ||
             !connection.nodes.every((node: unknown) => node !== null && typeof node === "object" && "slug" in node && typeof node.slug === "string" && /^[a-z0-9][a-z0-9-]{0,38}$/i.test(node.slug)) ||
             typeof connection.pageInfo?.hasNextPage !== "boolean") throw new AuthError("enterprise_check_failed");
         if (connection.nodes.some((node: {slug: string}) => this.config.enterprises.includes(node.slug.toLowerCase()))) return true;
         if (!connection.pageInfo.hasNextPage) return false;
         const cursor = connection.pageInfo.endCursor;
+        diagnostic = "invalid_pagination";
         if (typeof cursor !== "string" || !cursor || cursor.length > 2048 || cursors.has(cursor)) throw new AuthError("enterprise_check_failed");
         cursors.add(cursor);
         after = cursor;
       }
+      diagnostic = "pagination_limit";
+      throw new AuthError("enterprise_check_failed");
     } catch (error) {
       if (error instanceof AuthError && error.code === "unauthorized") throw error;
       // Do not expose GraphQL messages, query variables or provider credentials.
+      console.warn("marvin.auth.enterprise", {diagnostic: deadline.aborted ? "timeout" : diagnostic, ...(httpStatus === undefined ? {} : {httpStatus})});
       throw new AuthError("enterprise_check_failed");
     }
-    throw new AuthError("enterprise_check_failed");
   }
 
   async identity(token: string): Promise<Identity> {
